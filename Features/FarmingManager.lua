@@ -687,13 +687,9 @@ _G.YOKUDO_FarmingManager = {
     OnVIPTPComplete = OnVIPTPComplete,
 }
 
+-- ==================================================
+-- REGISTER WITH CHARACTER SYSTEM
+-- ==================================================
 
--- ==================================================
--- BUILD MESHID MAP ON LOAD
--- ==================================================
-task.spawn(function()
-    task.wait(2)
-    BuildMeshIdMap()
-end)
 
 print("✅ FarmingManager Loaded (Egg Check + Day/Night + AFK + VIPTP + Callback)")
