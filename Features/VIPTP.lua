@@ -38,8 +38,8 @@ local SAFE_ZONE_DIST = 5
 local SAFE_WAIT_AFTER_REACH = 1
 local FLY_SPEED = 1000
 local SAFE_FLY_SPEED = 500
-local RETURN_SPEED = 800
-local FLY_OFFSET = 15
+local RETURN_SPEED = 1000
+local FLY_OFFSET = 5
 local METHOD = "InstantTeleport"
 
 -- ==================================================
