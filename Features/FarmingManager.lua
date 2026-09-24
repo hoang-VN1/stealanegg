@@ -6,6 +6,7 @@
 -- ហៅ VIPTP ពេលឃើញ Egg + Day
 -- Night Check: 0.05s | Day Check: 0.5s
 -- ✅ Callback ពី VIPTP ពេល AutoStop
+-- ✅ យក Egg ទាំងអស់តាមលំដាប់ (ខ្ពស់មុន → ទាបក្រោយ)
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -35,12 +36,11 @@ local NIGHT_CHECK_INTERVAL = 0.05
 local DAY_CHECK_INTERVAL = 0.5
 local SAFE_ZONE = Vector3.new(533, 70, -366)
 local SAFE_ZONE_DIST = 5
-local SAFE_WAIT_AFTER_REACH = 1
+local SAFE_WAIT_AFTER_REACH = 0.1
 local FLY_SPEED = 1000
-local SAFE_FLY_SPEED = 500
-local RETURN_SPEED = 800
+local SAFE_FLY_SPEED = 1000
+local RETURN_SPEED = 1000
 local FLY_OFFSET = 15
-local METHOD = "InstantTeleport"
 
 -- ==================================================
 -- EGG CHECK PREMIUM (បញ្ចូលក្នុង FarmingManager)
@@ -532,7 +532,6 @@ local function NightLoop()
                     StartVIPTP(PendingEggUid)
                     PendingEggUid = nil
 
-                    -- រង់ចាំ VIPTP ចប់ (Callback នឹងហៅ OnVIPTPComplete)
                     while WaitingForVIPTP and FarmingEnabled do
                         task.wait(0.5)
                     end
@@ -578,11 +577,10 @@ local function DayLoop()
             task.wait(0.5)
 
             FlyToSafeZoneAndWait()
-            task.wait(1)
+            task.wait(SAFE_WAIT_AFTER_REACH)
 
             StartVIPTP(BestEgg.Uid)
 
-            -- រង់ចាំ VIPTP ចប់ (Callback នឹងហៅ OnVIPTPComplete)
             while WaitingForVIPTP and FarmingEnabled do
                 task.wait(0.5)
             end
@@ -682,14 +680,11 @@ _G.YOKUDO_FarmingManager = {
     SAFE_FLY_SPEED = SAFE_FLY_SPEED,
     RETURN_SPEED = RETURN_SPEED,
     FLY_OFFSET = FLY_OFFSET,
-    METHOD = METHOD,
-    -- ✅ Callback សម្រាប់ VIPTP
     OnVIPTPComplete = OnVIPTPComplete,
 }
 
 -- ==================================================
 -- REGISTER WITH CHARACTER SYSTEM
 -- ==================================================
-
 
 print("✅ FarmingManager Loaded (Egg Check + Day/Night + AFK + VIPTP + Callback)")
