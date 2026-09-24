@@ -2,6 +2,7 @@
 -- YOKUDO HUB | FEATURE | Bypass Anti Cheat
 -- Humanoid Replace + Anti Death
 -- ✅ Restart Features តាមរយៈ CharacterSystem
+-- ❌ លុប Auto Re-run ចេញ
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -386,15 +387,6 @@ local function RunBypassAntiCheat()
     print("[YOKUDO] HUMANOID REPLACE + ANTI DEATH COMPLETE")
     print("========================================")
 end
-
--- ==================================================
--- AUTO RE-RUN ON CHARACTER ADDED
--- ==================================================
-Player.CharacterAdded:Connect(function(Character)
-    task.wait(1) -- រង់ចាំ Character Load
-    RunBypassAntiCheat()
-    print("[YOKUDO] Bypass Anti Cheat: Re-applied on new Character")
-end)
 
 -- ==================================================
 -- RUN IMMEDIATELY
