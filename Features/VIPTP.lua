@@ -4,8 +4,13 @@
 -- Speed កំណត់ក្នុង file ខ្លួនឯង
 -- Method: InstantTeleport (Fixed)
 -- Fly Speed: 1000 | Return Speed: 800 | Fly Offset: 15
--- ✅ Register ជាមួយ CharacterSystem
--- ✅ Auto Callback ទៅ FarmingManager ពេល AutoStop
+-- ✅ Logic:
+--    1. Collect First Egg → Remote → Wait workspace
+--    2. Fly TP ទៅ Target Egg → Collect → Wait workspace
+--    3. Egg ចូល workspace → Fly to Safe Zone + Auto Check Distance (0.05s)
+--    4. Distance > 6 → Stop → Auto Fly Back ទៅ Target Egg
+--    5. Lock ពីលើ 2 studs → រង់ចាំ Y ថេរ → Save Y → Auto Collect
+--    6. Y ឡើង = Confirm → Fly TP ទៅ Safe Zone
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -37,26 +42,33 @@ end
 print("[VIPTP] CollectEvent OK")
 
 -- ==================================================
--- SETTINGS (កំណត់ក្នុង file ខ្លួនឯង)
+-- SETTINGS
 -- ==================================================
 local TARGET_UID = nil
 local SAFE_ZONE = Vector3.new(533, 70, -366)
 
-local FLY_SPEED = 1000        -- Fixed
-local RETURN_SPEED = 1000      -- Fixed
-local FLY_OFFSET = 15         -- Fixed
-local CurrentMethod = "InstantTeleport"  -- Fixed
+local FLY_SPEED = 1000
+local RETURN_SPEED = 800
+local FLY_OFFSET = 15
+local CurrentMethod = "InstantTeleport"
 
 local SHOT_DISTANCE = 15
 local LOCK_ABOVE = 1
+local LOCK_ABOVE_AUTO_FLY_BACK = 2
 
 local ARRIVE_DISTANCE = 2
 local SAFE_LOCK_DISTANCE = 3
 local TIMEOUT_SECONDS = 30
 
 local COLLECT_INTERVAL = 0.2
+local COLLECT_INTERVAL_AUTO_FLY_BACK = 0.05
 local SEARCH_PREFIX = "FirstAreaEgg"
 local POSITION_THRESHOLD = 1
+
+local AUTO_FLY_BACK_DISTANCE_THRESHOLD = 6
+local AUTO_FLY_BACK_MAX_ATTEMPTS = 999
+local STABLE_Y_REQUIRED = 3
+local STABLE_Y_THRESHOLD = 0.1
 
 local LOCK_POSITION = Vector3.new(
     607.6259155273438,
@@ -103,6 +115,22 @@ local SavedWalkSpeed = nil
 local SavedJumpPower = nil
 local SavedJumpHeight = nil
 local SavedUseJumpPower = nil
+
+-- ✅ Auto Fly Back State
+local AutoFlyBackActive = false
+local AutoFlyBackAttempts = 0
+local SavedEggY = nil
+local AutoFlyBackTargetUid = nil
+local AutoFlyBackCheckStarted = false
+local FlyToSafeZoneActive = false
+local FlyToSafeZoneRequested = false  -- ✅ ថ្មី
+
+-- ==================================================
+-- FORWARD DECLARATIONS
+-- ==================================================
+local FlyToSafeZone  -- ✅ Forward declaration
+local AutoStop       -- ✅ Forward declaration
+local StartAutoFlyBackTask  -- ✅ Forward declaration
 
 -- ==================================================
 -- GET HUMANOID
@@ -275,10 +303,11 @@ local function CleanupMovers()
 end
 
 -- ==================================================
--- LOCK AT TARGET (Y+1)
+-- LOCK AT TARGET
 -- ==================================================
-local function StartLock(TargetPosition)
-    TargetLockedCFrame = CFrame.new(TargetPosition + Vector3.new(0, LOCK_ABOVE, 0))
+local function StartLock(TargetPosition, LockAbove)
+    LockAbove = LockAbove or LOCK_ABOVE
+    TargetLockedCFrame = CFrame.new(TargetPosition + Vector3.new(0, LockAbove, 0))
 
     if LockConnection then
         LockConnection:Disconnect()
@@ -368,15 +397,16 @@ end
 -- ==================================================
 -- FLY TP
 -- ==================================================
-local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
+local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback, LockAbove)
     CleanupMovers()
 
     local Hum, Root = GetHumanoid()
     if not Hum or not Root then return end
     if Hum.Health <= 0 then return end
 
+    LockAbove = LockAbove or LOCK_ABOVE
     local FlyPos = Vector3.new(Destination.X, Destination.Y + FLY_OFFSET, Destination.Z)
-    local LockCFrame = CFrame.new(Destination + Vector3.new(0, LOCK_ABOVE, 0))
+    local LockCFrame = CFrame.new(Destination + Vector3.new(0, LockAbove, 0))
 
     Hum.PlatformStand = true
 
@@ -428,7 +458,7 @@ local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
                 Root2.CFrame = LockCFrame
                 Root2.AssemblyLinearVelocity = Vector3.zero
                 Root2.AssemblyAngularVelocity = Vector3.zero
-                StartLock(Destination)
+                StartLock(Destination, LockAbove)
                 if Callback then Callback() end
                 return
             end
@@ -440,7 +470,7 @@ local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
             Root2.CFrame = LockCFrame
             Root2.AssemblyLinearVelocity = Vector3.zero
             Root2.AssemblyAngularVelocity = Vector3.zero
-            StartLock(Destination)
+            StartLock(Destination, LockAbove)
             if Callback then Callback() end
             return
         end
@@ -450,7 +480,7 @@ local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
             Root2.CFrame = LockCFrame
             Root2.AssemblyLinearVelocity = Vector3.zero
             Root2.AssemblyAngularVelocity = Vector3.zero
-            StartLock(Destination)
+            StartLock(Destination, LockAbove)
             if Callback then Callback() end
             return
         end
@@ -474,26 +504,27 @@ end
 -- ==================================================
 -- INSTANT FLY TP
 -- ==================================================
-local function InstantFlyTP(Destination, Callback)
+local function InstantFlyTP(Destination, Callback, LockAbove)
     CleanupMovers()
 
     local Hum, Root = GetHumanoid()
     if not Hum or not Root then return end
     if Hum.Health <= 0 then return end
 
-    local LockCFrame = CFrame.new(Destination + Vector3.new(0, LOCK_ABOVE, 0))
+    LockAbove = LockAbove or LOCK_ABOVE
+    local LockCFrame = CFrame.new(Destination + Vector3.new(0, LockAbove, 0))
 
     Root.CFrame = LockCFrame
     Root.AssemblyLinearVelocity = Vector3.zero
     Root.AssemblyAngularVelocity = Vector3.zero
 
-    StartLock(Destination)
+    StartLock(Destination, LockAbove)
 
     if Callback then Callback() end
 end
 
 -- ==================================================
--- TELEPORT TO TARGET (Instant Only)
+-- TELEPORT TO TARGET
 -- ==================================================
 local function TeleportToTarget(TargetPos, Callback)
     print("[VIPTP] Instant TP to Target")
@@ -519,6 +550,16 @@ local function RemoteCollectTarget()
     local success = pcall(function()
         return CollectEvent:InvokeServer({
             Uid = TARGET_UID
+        })
+    end)
+    return success
+end
+
+local function RemoteCollectAutoFlyBack()
+    if not CollectEvent or not AutoFlyBackTargetUid then return false end
+    local success = pcall(function()
+        return CollectEvent:InvokeServer({
+            Uid = AutoFlyBackTargetUid
         })
     end)
     return success
@@ -576,9 +617,10 @@ local function IsTargetInWorkspace()
 end
 
 -- ==================================================
--- AUTO STOP (កែ — បន្ថែម Callback)
+-- AUTO STOP (Forward Declaration Implementation)
 -- ==================================================
-local function AutoStop()
+function AutoStop()
+    if not Running then return end  -- ✅ ការពារកុំឲ្យហៅស្ទួន
     Running = false
     CurrentStep = "done"
 
@@ -587,15 +629,148 @@ local function AutoStop()
     StopActiveHeartbeat()
     RestoreStats()
 
+    AutoFlyBackActive = false
+    AutoFlyBackAttempts = 0
+    SavedEggY = nil
+    AutoFlyBackTargetUid = nil
+    AutoFlyBackCheckStarted = false
+    FlyToSafeZoneActive = false
+    FlyToSafeZoneRequested = false
+
     print("[VIPTP] Auto Stop")
 
-    -- ✅ ហៅ Callback ទៅ FarmingManager
     if _G.YOKUDO_FarmingManager and _G.YOKUDO_FarmingManager.OnVIPTPComplete then
         task.spawn(function()
             task.wait(0.5)
             _G.YOKUDO_FarmingManager.OnVIPTPComplete()
         end)
     end
+end
+
+-- ==================================================
+-- FLY TO SAFE (Forward Declaration Implementation)
+-- ==================================================
+function FlyToSafeZone()
+    if FlyToSafeZoneActive then return end
+    if FlyToSafeZoneRequested then return end
+    FlyToSafeZoneActive = true
+    FlyToSafeZoneRequested = true
+
+    CurrentStep = "to_safe"
+
+    print("[VIPTP] FlyTP to Safe Zone")
+
+    FlyTP(SAFE_ZONE, RETURN_SPEED, false, true, function()
+        FlyToSafeZoneActive = false
+        TargetCollected = true
+        -- ✅ រង់ចាំ 0.5s រួច AutoStop
+        task.spawn(function()
+            task.wait(0.5)
+            AutoStop()
+        end)
+    end)
+end
+
+-- ==================================================
+-- ✅ AUTO FLY BACK LOGIC
+-- ==================================================
+function StartAutoFlyBackTask()
+    if AutoFlyBackActive then return end
+    AutoFlyBackCheckStarted = false
+
+    local EggInWS = workspace:FindFirstChild(TARGET_UID)
+    if not EggInWS then
+        print("[VIPTP] Auto Fly Back: Egg not in workspace!")
+        return
+    end
+
+    local EggPos = GetPosition(EggInWS)
+    if not EggPos then
+        print("[VIPTP] Auto Fly Back: Cannot get Egg position!")
+        return
+    end
+
+    print("[VIPTP] Auto Fly Back: Starting Task!")
+
+    AutoFlyBackActive = true
+    AutoFlyBackAttempts = AutoFlyBackAttempts + 1
+    AutoFlyBackTargetUid = TARGET_UID
+
+    -- ✅ Fly Back ទៅ Egg ហើយ Lock ពីលើ 2 studs
+    FlyTP(EggPos, FLY_SPEED, true, false, function()
+        print("[VIPTP] Auto Fly Back: Locked at Egg")
+
+        -- ✅ រង់ចាំ Y ថេរ សិន រួច Save Y
+        task.spawn(function()
+            local LastY = nil
+            local StableCount = 0
+
+            while AutoFlyBackActive and Running do
+                task.wait(0.05)
+
+                local EggInWS2 = workspace:FindFirstChild(TARGET_UID)
+                if not EggInWS2 then
+                    print("[VIPTP] Auto Fly Back: Egg gone → Done!")
+                    AutoFlyBackActive = false
+                    if Running then
+                        FlyToSafeZone()
+                    end
+                    return
+                end
+
+                local EggPos2 = GetPosition(EggInWS2)
+                if EggPos2 then
+                    -- ✅ ពិនិត្យ Y ថេរ
+                    if LastY and math.abs(EggPos2.Y - LastY) < STABLE_Y_THRESHOLD then
+                        StableCount = StableCount + 1
+                        if StableCount >= STABLE_Y_REQUIRED then
+                            -- ✅ Y ថេរ → Save Y
+                            SavedEggY = EggPos2.Y
+                            print("[VIPTP] Auto Fly Back: Y Stable = " .. tostring(SavedEggY))
+                            break
+                        end
+                    else
+                        StableCount = 0
+                    end
+                    LastY = EggPos2.Y
+                end
+            end
+
+            if not AutoFlyBackActive or not Running then return end
+
+            print("[VIPTP] Auto Fly Back: Starting Auto Collect...")
+
+            -- ✅ Auto Collect ជាប់ៗ រហូតដល់ Y ឡើង
+            while AutoFlyBackActive and Running do
+                task.wait(COLLECT_INTERVAL_AUTO_FLY_BACK)
+
+                local EggInWS3 = workspace:FindFirstChild(TARGET_UID)
+                if not EggInWS3 then
+                    print("[VIPTP] Auto Fly Back: Egg gone → Done!")
+                    AutoFlyBackActive = false
+                    if Running then
+                        FlyToSafeZone()
+                    end
+                    return
+                end
+
+                local EggPos3 = GetPosition(EggInWS3)
+                if EggPos3 then
+                    -- ✅ ពិនិត្យ Y ឡើង
+                    if SavedEggY and EggPos3.Y > SavedEggY + 0.1 then
+                        print("[VIPTP] Auto Fly Back: Y Up! " .. tostring(SavedEggY) .. " → " .. tostring(EggPos3.Y) .. " → Done!")
+                        AutoFlyBackActive = false
+                        if Running then
+                            FlyToSafeZone()
+                        end
+                        return
+                    end
+
+                    RemoteCollectAutoFlyBack()
+                end
+            end
+        end)
+    end, LOCK_ABOVE_AUTO_FLY_BACK)
 end
 
 -- ==================================================
@@ -637,19 +812,6 @@ local function StartFlyToTarget()
 end
 
 -- ==================================================
--- FLY TO SAFE (NO SHOT TP)
--- ==================================================
-local function FlyToSafeZone()
-    CurrentStep = "to_safe"
-
-    print("[VIPTP] FlyTP to Safe Zone")
-
-    FlyTP(SAFE_ZONE, RETURN_SPEED, false, true, function()
-        AutoStop()
-    end)
-end
-
--- ==================================================
 -- HEARTBEAT
 -- ==================================================
 local function StartActiveHeartbeat()
@@ -665,6 +827,9 @@ local function StartActiveHeartbeat()
         if not Hum or not Root then return end
         if Hum.Health <= 0 then return end
 
+        -- ==================================================
+        -- STEP: collect_first
+        -- ==================================================
         if CurrentStep == "collect_first" and not CollectDone then
             if IsFirstEggInWorkspace() then
                 CollectDone = true
@@ -689,19 +854,89 @@ local function StartActiveHeartbeat()
             end
         end
 
+        -- ==================================================
+        -- STEP: wait_spawn_back
+        -- ==================================================
         if CurrentStep == "wait_spawn_back" and not FlyTargetStarted then
             if IsFirstEggInContainer() then
                 task.spawn(function() StartFlyToTarget() end)
             end
         end
 
+        -- ==================================================
+        -- STEP: collect_target
+        -- ==================================================
         if CurrentStep == "collect_target" and not TargetCollected then
             if CurrentMode == "spawn" then
-                if workspace:FindFirstChild(TARGET_UID) then
-                    TargetCollected = true
-                    task.spawn(function() FlyToSafeZone() end)
+                -- ✅ Step 1: Collect Target Egg ពី Container មុន
+                local TargetInContainer = Container:FindFirstChild(TARGET_UID)
+                if TargetInContainer then
+                    if tick() - CollectTime > COLLECT_INTERVAL_AUTO_FLY_BACK then
+                        CollectTime = tick()
+                        RemoteCollectTarget()
+                        CollectAttempts = CollectAttempts + 1
+                    end
                     return
                 end
+
+                -- ✅ Step 2: Egg ចូល workspace → Fly to Safe Zone + Auto Check Distance
+                local EggInWS = workspace:FindFirstChild(TARGET_UID)
+                if EggInWS and not AutoFlyBackCheckStarted and not AutoFlyBackActive then
+                    AutoFlyBackCheckStarted = true
+                    print("[VIPTP] Egg entered workspace → Fly to Safe Zone + Auto Check Distance")
+
+                    task.spawn(function()
+                        if Running then
+                            FlyToSafeZone()
+                        end
+                    end)
+
+                    task.spawn(function()
+                        while Running and not TargetCollected do
+                            task.wait(COLLECT_INTERVAL_AUTO_FLY_BACK)
+
+                            local EggNow = workspace:FindFirstChild(TARGET_UID)
+                            if not EggNow then
+                                print("[VIPTP] Egg gone from workspace → TargetCollected = true")
+                                TargetCollected = true
+                                AutoFlyBackCheckStarted = false
+                                return
+                            end
+
+                            local EggPos = GetPosition(EggNow)
+                            local Hum2, Root2 = GetHumanoid()
+                            if EggPos and Root2 then
+                                local Dist = (EggPos - Root2.Position).Magnitude
+
+                                if Dist > AUTO_FLY_BACK_DISTANCE_THRESHOLD then
+                                    print("[VIPTP] Distance > 6 (" .. math.floor(Dist) .. ") → Stop Fly + Auto Fly Back!")
+
+                                    -- ✅ Stop Fly to Safe Zone
+                                    FlyToSafeZoneActive = false
+                                    FlyToSafeZoneRequested = false
+                                    CleanupMovers()
+
+                                    -- ✅ Start Auto Fly Back
+                                    StartAutoFlyBackTask()
+
+                                    AutoFlyBackCheckStarted = false
+                                    return
+                                end
+                            end
+                        end
+                        AutoFlyBackCheckStarted = false
+                    end)
+                end
+
+                if AutoFlyBackActive then
+                    return
+                end
+
+                if TargetCollected then
+                    AutoStop()
+                    return
+                end
+
             elseif CurrentMode == "workspace" then
                 if SavedTargetPosition then
                     local WSEgg = workspace:FindFirstChild(TARGET_UID)
@@ -717,12 +952,6 @@ local function StartActiveHeartbeat()
                         end
                     end
                 end
-            end
-
-            if tick() - CollectTime > COLLECT_INTERVAL then
-                CollectTime = tick()
-                RemoteCollectTarget()
-                CollectAttempts = CollectAttempts + 1
             end
         end
     end)
@@ -751,10 +980,17 @@ local function StartProcess()
     SavedTargetPosition = nil
     TargetLockedCFrame = nil
 
+    AutoFlyBackActive = false
+    AutoFlyBackAttempts = 0
+    SavedEggY = nil
+    AutoFlyBackTargetUid = nil
+    AutoFlyBackCheckStarted = false
+    FlyToSafeZoneActive = false
+    FlyToSafeZoneRequested = false
+
     SaveStats()
     EnableRagdollBypass()
 
-    -- ✅ Auto Detect Option (spawn or workspace)
     if IsTargetInContainer() then
         CurrentMode = "spawn"
         print("[VIPTP] Target found in Container → spawn mode")
@@ -837,6 +1073,14 @@ local function FullReset()
     SavedTargetPosition = nil
     TargetLockedCFrame = nil
 
+    AutoFlyBackActive = false
+    AutoFlyBackAttempts = 0
+    SavedEggY = nil
+    AutoFlyBackTargetUid = nil
+    AutoFlyBackCheckStarted = false
+    FlyToSafeZoneActive = false
+    FlyToSafeZoneRequested = false
+
     CleanupMovers()
     DisableRagdollBypass()
     StopActiveHeartbeat()
@@ -879,6 +1123,7 @@ _G.YOKUDO_VIPTP = {
     IsEnabled = function() return Running end,
     GetTargetId = function() return TARGET_UID end,
     GetMode = function() return CurrentMode end,
+    IsAutoFlyBackActive = function() return AutoFlyBackActive end,
     FLY_SPEED = FLY_SPEED,
     RETURN_SPEED = RETURN_SPEED,
     FLY_OFFSET = FLY_OFFSET,
@@ -911,4 +1156,4 @@ if _G.YOKUDO_CharacterSystem then
     })
 end
 
-print("✅ VIPTP Loaded (AFK Farm Only | Instant | Speed 1000/800 | Offset 15 | Callback)")
+print("✅ VIPTP Loaded (AFK Farm Only | Instant | Auto Fly Back | No Limit)")
