@@ -1,11 +1,10 @@
 -- ==================================================
 -- YOKUDO HUB | FEATURE | Farming Manager (NEW)
--- បញ្ចូល Egg Check Logic ពី EggCheckPremium
--- ពិនិត្យ Egg ជាប់ៗ ទាំង Day ទាំង Night
--- ពេលឃើញ Egg → ចេញ AFK → Safe Zone
--- បើ Day → VIPTP ភ្លាមៗ | បើ Night → រង់ចាំ Day
+-- ✅ បញ្ចូល Egg Check Logic ពី EggCheckPremium
+-- ✅ ពិនិត្យ Egg ជាប់ៗ (ទាំង Day ទាំង Night)
+-- ✅ ហៅ AFKSystem ពេលអត់ឃើញ Egg
+-- ✅ ហៅ VIPTP ពេលឃើញ Egg
 -- ✅ Callback ពី VIPTP ពេល AutoStop
--- ❌ ដក TeleportSystem ចេញ
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -16,31 +15,17 @@ local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
 
 -- ==================================================
--- AREA EGG CYCLE
--- ==================================================
-local AreaEggCycle = nil
-
-pcall(function()
-    AreaEggCycle = require(ReplicatedStorage.Shared.Util.AreaEggCycle)
-end)
-
-if not AreaEggCycle then
-    warn("[FarmingManager] AreaEggCycle not found! Using fallback.")
-end
-
--- ==================================================
 -- SETTINGS
 -- ==================================================
-local EGG_CHECK_INTERVAL = 0.05
-local DAY_CHECK_INTERVAL = 0.5
+local EGG_CHECK_INTERVAL = 0.5          -- ពិនិត្យ Egg រាល់ 0.5s
 local SAFE_ZONE = Vector3.new(533, 70, -366)
 local SAFE_ZONE_DIST = 5
-local SAFE_WAIT_AFTER_REACH = 0.1
-local FLY_SPEED = 1000
-local SAFE_FLY_SPEED = 1000
+local SAFE_WAIT_AFTER_REACH = 1
+local SAFE_FLY_SPEED = 500
+local FLY_OFFSET = 15
 
 -- ==================================================
--- EGG CHECK PREMIUM
+-- EGG CHECK PREMIUM (បញ្ចូលក្នុង FarmingManager)
 -- ==================================================
 local SelectedRarities = { Divine = true, Eternal = true, Secret = true }
 
@@ -175,8 +160,6 @@ end
 -- STATE
 -- ==================================================
 local FarmingEnabled = false
-local CurrentState = "IDLE"
-local CurrentPhase = "UNKNOWN"
 local FarmingThread = nil
 local AFKStarted = false
 local PendingEggUid = nil
@@ -187,14 +170,22 @@ local BodyVelocity = nil
 local BodyGyro = nil
 
 -- ==================================================
--- GET HUMANOID
+-- GET CHARACTER
 -- ==================================================
-local function GetHumanoid()
-    local Char = Player.Character
-    if not Char then return nil, nil end
-    local Hum = Char:FindFirstChildOfClass("Humanoid")
-    local Root = Char:FindFirstChild("HumanoidRootPart")
-    return Hum, Root
+local function GetChar()
+    return Player.Character
+end
+
+local function GetRoot()
+    local Char = GetChar()
+    if not Char then return nil end
+    return Char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHum()
+    local Char = GetChar()
+    if not Char then return nil end
+    return Char:FindFirstChildOfClass("Humanoid")
 end
 
 -- ==================================================
@@ -218,7 +209,8 @@ local function CleanupFly()
         BodyGyro:Destroy()
         BodyGyro = nil
     end
-    local Hum, Root = GetHumanoid()
+    local Hum = GetHum()
+    local Root = GetRoot()
     if Hum then
         pcall(function()
             Hum.PlatformStand = false
@@ -239,7 +231,8 @@ end
 local function SelfFlyTP(Destination, Speed, Callback)
     CleanupFly()
 
-    local Hum, Root = GetHumanoid()
+    local Hum = GetHum()
+    local Root = GetRoot()
     if not Hum or not Root then
         if Callback then Callback() end
         return
@@ -274,7 +267,8 @@ local function SelfFlyTP(Destination, Speed, Callback)
             return
         end
 
-        local Hum2, Root2 = GetHumanoid()
+        local Hum2 = GetHum()
+        local Root2 = GetRoot()
         if not Hum2 or not Root2 then
             CleanupFly()
             return
@@ -286,7 +280,7 @@ local function SelfFlyTP(Destination, Speed, Callback)
         local Direction = Destination - CurrentPos
         local TotalDist = Direction.Magnitude
 
-        if TotalDist <= 5 then
+        if TotalDist <= 3 then
             CleanupFly()
             Root2.CFrame = CFrame.new(Destination)
             Root2.AssemblyLinearVelocity = Vector3.zero
@@ -295,7 +289,7 @@ local function SelfFlyTP(Destination, Speed, Callback)
             return
         end
 
-        if tick() - StartTime > 15 then
+        if tick() - StartTime > 30 then
             CleanupFly()
             if Callback then Callback() end
             return
@@ -304,42 +298,6 @@ local function SelfFlyTP(Destination, Speed, Callback)
         BodyVelocity.Velocity = Direction.Unit * Speed
         BodyGyro.CFrame = CFrame.new(CurrentPos, Destination)
     end)
-end
-
--- ==================================================
--- GET PHASE
--- ==================================================
-local function GetPhase()
-    if AreaEggCycle then
-        local Success, IsNight = pcall(function()
-            return AreaEggCycle.IsNightPhase(Workspace:GetServerTimeNow())
-        end)
-
-        if Success then
-            if IsNight then
-                return "Night"
-            else
-                return "Day"
-            end
-        end
-    end
-
-    local Success, Text = pcall(function()
-        return Player.PlayerGui.HUD.GameHUD.BottomRight.NightTimer.Value.Text
-    end)
-
-    if Success and Text then
-        local M = tonumber(string.match(Text, "(%d+)m")) or 0
-        local S = tonumber(string.match(Text, "(%d+)s")) or 0
-        local Sec = M * 60 + S
-        if Sec > 10 then
-            return "Day"
-        else
-            return "Night"
-        end
-    end
-
-    return "UNKNOWN"
 end
 
 -- ==================================================
@@ -372,6 +330,11 @@ local function StopAll()
         print("[FarmingManager] ✅ VIPTP Stopped")
     end
 
+    if _G.YOKUDO_TeleportSystem and _G.YOKUDO_TeleportSystem.IsEnabled() then
+        _G.YOKUDO_TeleportSystem.Disable()
+        print("[FarmingManager] ✅ TeleportSystem Stopped")
+    end
+
     CleanupFly()
 end
 
@@ -379,7 +342,7 @@ end
 -- FLY TO SAFE ZONE AND WAIT
 -- ==================================================
 local function FlyToSafeZoneAndWait()
-    local Hum, Root = GetHumanoid()
+    local Root = GetRoot()
     if not Root then return false end
 
     local DistToSafe = (Root.Position - SAFE_ZONE).Magnitude
@@ -397,7 +360,7 @@ local function FlyToSafeZoneAndWait()
 
     local WaitTime = 0
     while FarmingEnabled and WaitTime < 10 do
-        local Hum2, Root2 = GetHumanoid()
+        local Root2 = GetRoot()
         if Root2 then
             local Dist = (Root2.Position - SAFE_ZONE).Magnitude
             if Dist <= SAFE_ZONE_DIST then
@@ -410,27 +373,6 @@ local function FlyToSafeZoneAndWait()
     end
 
     print("[FarmingManager] ⚠️ Safe Zone Wait Timeout")
-    return false
-end
-
--- ==================================================
--- WAIT FOR DAY
--- ==================================================
-local function WaitForDay()
-    print("[FarmingManager] Waiting for Day...")
-
-    while FarmingEnabled do
-        local Phase = GetPhase()
-        CurrentPhase = Phase
-
-        if Phase == "Day" then
-            print("[FarmingManager] ✅ Day Started!")
-            return true
-        end
-
-        task.wait(DAY_CHECK_INTERVAL)
-    end
-
     return false
 end
 
@@ -452,7 +394,7 @@ local function StartVIPTP(EggUid)
 end
 
 -- ==================================================
--- CALLBACK ពី VIPTP
+-- ✅ CALLBACK ពី VIPTP
 -- ==================================================
 local function OnVIPTPComplete()
     if not FarmingEnabled then return end
@@ -467,27 +409,12 @@ local function OnVIPTPComplete()
         print("[FarmingManager] New Egg Found: " .. BestEgg.DisplayName)
         PendingEggUid = BestEgg.Uid
 
-        local Phase = GetPhase()
-        CurrentPhase = Phase
-
         task.spawn(function()
             local ReachedSafe = FlyToSafeZoneAndWait()
             if ReachedSafe and PendingEggUid then
                 task.wait(SAFE_WAIT_AFTER_REACH)
-
-                if Phase == "Day" then
-                    print("[FarmingManager] ✅ Day → Start VIPTP Immediately")
-                    StartVIPTP(PendingEggUid)
-                    PendingEggUid = nil
-                else
-                    print("[FarmingManager] Night → Wait for Day")
-                    local IsDay = WaitForDay()
-                    if IsDay and PendingEggUid then
-                        print("[FarmingManager] ✅ Day Reached → Start VIPTP")
-                        StartVIPTP(PendingEggUid)
-                        PendingEggUid = nil
-                    end
-                end
+                StartVIPTP(PendingEggUid)
+                PendingEggUid = nil
             end
         end)
     else
@@ -500,65 +427,53 @@ local function OnVIPTPComplete()
 end
 
 -- ==================================================
--- MAIN LOOP
+-- ✅ MAIN LOOP (ពិនិត្យ Egg ជាប់ៗ ទាំង Day ទាំង Night)
 -- ==================================================
 local function MainLoop()
-    print("[FarmingManager] MainLoop Started")
+    print("[FarmingManager] MainLoop Started (Check Egg Only)")
 
     while FarmingEnabled do
-        local Phase = GetPhase()
-        CurrentPhase = Phase
-
+        -- ✅ ពិនិត្យ Egg ជាប់ៗ
         local BestEgg = FindBestEgg()
 
         if BestEgg then
-            print("[FarmingManager] ✅ Egg Found: " .. BestEgg.DisplayName .. " | Phase: " .. Phase)
+            -- ✅ ឃើញ Egg → Stop AFK → VIPTP
+            print("[FarmingManager] ✅ Egg Found: " .. BestEgg.DisplayName)
 
-            PendingEggUid = BestEgg.Uid
+            if WaitingForVIPTP then
+                -- កំពុងរង់ចាំ VIPTP ចប់
+                task.wait(EGG_CHECK_INTERVAL)
+            else
+                PendingEggUid = BestEgg.Uid
 
-            StopAll()
-            task.wait(0.5)
+                -- Stop AFK + Jump Out
+                StopAll()
+                task.wait(0.5)
 
-            local ReachedSafe = FlyToSafeZoneAndWait()
+                -- Fly to Safe Zone
+                local ReachedSafe = FlyToSafeZoneAndWait()
 
-            if ReachedSafe then
-                task.wait(SAFE_WAIT_AFTER_REACH)
-
-                if Phase == "Day" then
-                    print("[FarmingManager] ✅ Day → Start VIPTP Immediately")
+                if ReachedSafe and PendingEggUid then
+                    task.wait(SAFE_WAIT_AFTER_REACH)
                     StartVIPTP(PendingEggUid)
                     PendingEggUid = nil
-
-                    while WaitingForVIPTP and FarmingEnabled do
-                        task.wait(0.1)
-                    end
-                else
-                    print("[FarmingManager] Night → Wait for Day")
-                    local IsDay = WaitForDay()
-                    if IsDay and PendingEggUid then
-                        print("[FarmingManager] ✅ Day Reached → Start VIPTP")
-                        StartVIPTP(PendingEggUid)
-                        PendingEggUid = nil
-
-                        while WaitingForVIPTP and FarmingEnabled do
-                            task.wait(0.1)
-                        end
-                    end
                 end
             end
         else
-            if not AFKStarted then
-                if _G.YOKUDO_AFKSystem and not _G.YOKUDO_AFKSystem.IsEnabled() then
-                    _G.YOKUDO_AFKSystem.Enable()
-                    AFKStarted = true
-                    print("[FarmingManager] AFK Started (No Egg)")
+            -- ✅ អត់ឃើញ Egg → AFK
+            if not WaitingForVIPTP then
+                if not AFKStarted then
+                    if _G.YOKUDO_AFKSystem and not _G.YOKUDO_AFKSystem.IsEnabled() then
+                        print("[FarmingManager] No Egg → AFK Started")
+                        _G.YOKUDO_AFKSystem.Enable()
+                        AFKStarted = true
+                    end
                 end
             end
         end
 
         task.wait(EGG_CHECK_INTERVAL)
     end
-
     print("[FarmingManager] MainLoop Stopped")
 end
 
@@ -568,7 +483,6 @@ end
 local function Enable()
     if FarmingEnabled then return end
     FarmingEnabled = true
-    CurrentState = "CHECK_TIME"
     AFKStarted = false
     PendingEggUid = nil
     WaitingForVIPTP = false
@@ -579,7 +493,7 @@ local function Enable()
     end
     FarmingThread = task.spawn(function() MainLoop() end)
 
-    print("[YOKUDO] FarmingManager: ON")
+    print("[YOKUDO] FarmingManager: ON (Check Egg Only)")
 end
 
 local function Disable()
@@ -596,8 +510,6 @@ local function Disable()
     AFKStarted = false
     PendingEggUid = nil
     WaitingForVIPTP = false
-    CurrentState = "IDLE"
-    CurrentPhase = "UNKNOWN"
     print("[YOKUDO] FarmingManager: OFF")
 end
 
@@ -614,15 +526,33 @@ _G.YOKUDO_FarmingManager = {
     Toggle = Toggle,
     IsEnabled = function() return FarmingEnabled end,
     SetRarities = SetRarities,
-    GetState = function() return CurrentState end,
-    GetPhase = function() return CurrentPhase end,
     FindBestEgg = FindBestEgg,
     EGG_CHECK_INTERVAL = EGG_CHECK_INTERVAL,
-    DAY_CHECK_INTERVAL = DAY_CHECK_INTERVAL,
-    FLY_SPEED = FLY_SPEED,
     SAFE_FLY_SPEED = SAFE_FLY_SPEED,
+    FLY_OFFSET = FLY_OFFSET,
     OnVIPTPComplete = OnVIPTPComplete,
 }
+
+-- ==================================================
+-- REGISTER WITH CHARACTER SYSTEM
+-- ==================================================
+if _G.YOKUDO_CharacterSystem then
+    _G.YOKUDO_CharacterSystem:RegisterFeature({
+        Name = "FarmingManager",
+        Enable = Enable,
+        Disable = Disable,
+        IsEnabled = function() return FarmingEnabled end,
+        OnCharacterAdded = function(Char, Hum, Root)
+            if FarmingEnabled then
+                task.wait(1)
+                if FarmingThread then
+                    pcall(function() task.cancel(FarmingThread) end)
+                end
+                FarmingThread = task.spawn(function() MainLoop() end)
+            end
+        end
+    })
+end
 
 -- ==================================================
 -- BUILD MESHID MAP ON LOAD
@@ -632,4 +562,4 @@ task.spawn(function()
     BuildMeshIdMap()
 end)
 
-print("✅ FarmingManager Loaded (Egg Check + Day/Night + AFK + VIPTP + Callback | No TeleportSystem | No Register)")
+print("✅ FarmingManager Loaded (Check Egg Only | Day + Night)")
