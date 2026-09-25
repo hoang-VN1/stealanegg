@@ -5,6 +5,7 @@
 -- ពេលឃើញ Egg → ចេញ AFK → Safe Zone
 -- បើ Day → VIPTP ភ្លាមៗ | បើ Night → រង់ចាំ Day
 -- ✅ Callback ពី VIPTP ពេល AutoStop
+-- ❌ ដក TeleportSystem ចេញ (ការពារជាន់គ្នា)
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -342,9 +343,10 @@ local function GetPhase()
 end
 
 -- ==================================================
--- STOP ALL
+-- STOP ALL (❌ ដក TeleportSystem ចេញ)
 -- ==================================================
 local function StopAll()
+    -- បិទ AFKSystem
     if _G.YOKUDO_AFKSystem and _G.YOKUDO_AFKSystem.IsEnabled() then
         local TreadmillPos = _G.YOKUDO_AFKSystem.GetMyTreadmillPos()
         if not TreadmillPos then
@@ -366,15 +368,17 @@ local function StopAll()
         end
     end
 
+    -- បិទ VIPTP (មិនបិទ TeleportSystem ចាស់)
     if _G.YOKUDO_VIPTP and _G.YOKUDO_VIPTP.IsEnabled() then
         _G.YOKUDO_VIPTP.Disable()
         print("[FarmingManager] ✅ VIPTP Stopped")
     end
 
-    if _G.YOKUDO_TeleportSystem and _G.YOKUDO_TeleportSystem.IsEnabled() then
-        _G.YOKUDO_TeleportSystem.Disable()
-        print("[FarmingManager] ✅ TeleportSystem Stopped")
-    end
+    -- ❌ ដក TeleportSystem ចេញ — មិនបិទវាទេ
+    -- if _G.YOKUDO_TeleportSystem and _G.YOKUDO_TeleportSystem.IsEnabled() then
+    --     _G.YOKUDO_TeleportSystem.Disable()
+    --     print("[FarmingManager] ✅ TeleportSystem Stopped")
+    -- end
 
     CleanupFly()
 end
@@ -414,6 +418,27 @@ local function FlyToSafeZoneAndWait()
     end
 
     print("[FarmingManager] ⚠️ Safe Zone Wait Timeout")
+    return false
+end
+
+-- ==================================================
+-- WAIT FOR DAY
+-- ==================================================
+local function WaitForDay()
+    print("[FarmingManager] Waiting for Day...")
+
+    while FarmingEnabled do
+        local Phase = GetPhase()
+        CurrentPhase = Phase
+
+        if Phase == "Day" then
+            print("[FarmingManager] ✅ Day Started!")
+            return true
+        end
+
+        task.wait(DAY_CHECK_INTERVAL)
+    end
+
     return false
 end
 
@@ -482,27 +507,6 @@ local function OnVIPTPComplete()
             AFKStarted = true
         end
     end
-end
-
--- ==================================================
--- WAIT FOR DAY
--- ==================================================
-local function WaitForDay()
-    print("[FarmingManager] Waiting for Day...")
-
-    while FarmingEnabled do
-        local Phase = GetPhase()
-        CurrentPhase = Phase
-
-        if Phase == "Day" then
-            print("[FarmingManager] ✅ Day Started!")
-            return true
-        end
-
-        task.wait(DAY_CHECK_INTERVAL)
-    end
-
-    return false
 end
 
 -- ==================================================
@@ -654,4 +658,4 @@ task.spawn(function()
     BuildMeshIdMap()
 end)
 
-print("✅ FarmingManager Loaded (Egg Check + Day/Night + AFK + VIPTP + Callback | No Register)")
+print("✅ FarmingManager Loaded (Egg Check + Day/Night + AFK + VIPTP + Callback | No TeleportSystem | No Register)")
