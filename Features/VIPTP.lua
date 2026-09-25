@@ -4,7 +4,8 @@
 -- Speed កំណត់ក្នុង file ខ្លួនឯង
 -- Method: InstantTeleport (Fixed)
 -- Fly Speed: 1000 | Return Speed: 800 | Fly Offset: 15
--- ✅ Register ជាមួយ CharacterSystem
+-- ✅ ដក GetHumanoid — ប្រើ GetChar/GetRoot/GetHum
+-- ✅ ដក Register — មិន Register ជាមួយ CharacterSystem
 -- ✅ Auto Callback ទៅ FarmingManager ពេល AutoStop
 -- ==================================================
 
@@ -105,21 +106,30 @@ local SavedJumpHeight = nil
 local SavedUseJumpPower = nil
 
 -- ==================================================
--- GET HUMANOID
+-- ✅ GET CHAR / ROOT / HUM (ដក GetHumanoid ចេញ)
 -- ==================================================
-local function GetHumanoid()
-    local Char = Player.Character
-    if not Char then return nil, nil end
-    local Hum = Char:FindFirstChildOfClass("Humanoid")
-    local Root = Char:FindFirstChild("HumanoidRootPart")
-    return Hum, Root
+local function GetChar()
+    return Player.Character
+end
+
+local function GetRoot()
+    local Char = GetChar()
+    if not Char then return nil end
+    return Char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHum()
+    local Char = GetChar()
+    if not Char then return nil end
+    return Char:FindFirstChildOfClass("Humanoid")
 end
 
 -- ==================================================
 -- RAGDOLL BYPASS
 -- ==================================================
 local function ForceUp()
-    local Hum, Root = GetHumanoid()
+    local Hum = GetHum()
+    local Root = GetRoot()
     if not Hum or not Root then return end
 
     pcall(function()
@@ -146,7 +156,7 @@ local function ForceUp()
 end
 
 local function CleanupRagdollConstraints()
-    local Char = Player.Character
+    local Char = GetChar()
     if not Char then return end
 
     pcall(function()
@@ -203,7 +213,7 @@ end
 -- SAVE / RESTORE STATS
 -- ==================================================
 local function SaveStats()
-    local Hum = GetHumanoid()
+    local Hum = GetHum()
     if not Hum then return end
 
     if SavedWalkSpeed == nil then SavedWalkSpeed = Hum.WalkSpeed end
@@ -213,7 +223,7 @@ local function SaveStats()
 end
 
 local function RestoreStats()
-    local Hum = GetHumanoid()
+    local Hum = GetHum()
     if not Hum then return end
 
     if SavedWalkSpeed ~= nil then pcall(function() Hum.WalkSpeed = SavedWalkSpeed end) end
@@ -250,7 +260,7 @@ local function CleanupMovers()
         BodyGyro = nil
     end
 
-    local Hum, Root = GetHumanoid()
+    local Root = GetRoot()
     if Root then
         for _, Child in ipairs(Root:GetChildren()) do
             if Child.Name == "YokudoBV" or Child.Name == "YokudoBG" then
@@ -259,6 +269,7 @@ local function CleanupMovers()
         end
     end
 
+    local Hum = GetHum()
     if Hum then
         pcall(function()
             Hum.PlatformStand = false
@@ -290,7 +301,7 @@ local function StartLock(TargetPosition)
             return
         end
 
-        local Hum, Root = GetHumanoid()
+        local Root = GetRoot()
         if not Root then return end
 
         Root.CFrame = TargetLockedCFrame
@@ -340,7 +351,7 @@ local function SearchFirstEggs()
 end
 
 local function FindClosestEgg()
-    local Hum, Root = GetHumanoid()
+    local Root = GetRoot()
     if not Root then return nil end
 
     local Closest = nil
@@ -371,7 +382,8 @@ end
 local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
     CleanupMovers()
 
-    local Hum, Root = GetHumanoid()
+    local Hum = GetHum()
+    local Root = GetRoot()
     if not Hum or not Root then return end
     if Hum.Health <= 0 then return end
 
@@ -404,7 +416,8 @@ local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
             return
         end
 
-        local Hum2, Root2 = GetHumanoid()
+        local Hum2 = GetHum()
+        local Root2 = GetRoot()
         if not Hum2 or not Root2 then
             CleanupMovers()
             return
@@ -477,7 +490,8 @@ end
 local function InstantFlyTP(Destination, Callback)
     CleanupMovers()
 
-    local Hum, Root = GetHumanoid()
+    local Hum = GetHum()
+    local Root = GetRoot()
     if not Hum or not Root then return end
     if Hum.Health <= 0 then return end
 
@@ -576,7 +590,7 @@ local function IsTargetInWorkspace()
 end
 
 -- ==================================================
--- AUTO STOP (កែ — បន្ថែម Callback)
+-- AUTO STOP (មាន Callback)
 -- ==================================================
 local function AutoStop()
     Running = false
@@ -661,7 +675,8 @@ local function StartActiveHeartbeat()
     ActiveHeartbeat = RunService.Heartbeat:Connect(function()
         if not Running then return end
 
-        local Hum, Root = GetHumanoid()
+        local Hum = GetHum()
+        local Root = GetRoot()
         if not Hum or not Root then return end
         if Hum.Health <= 0 then return end
 
@@ -754,7 +769,6 @@ local function StartProcess()
     SaveStats()
     EnableRagdollBypass()
 
-    -- ✅ Auto Detect Option (spawn or workspace)
     if IsTargetInContainer() then
         CurrentMode = "spawn"
         print("[VIPTP] Target found in Container → spawn mode")
@@ -885,30 +899,6 @@ _G.YOKUDO_VIPTP = {
     SAFE_ZONE = SAFE_ZONE,
 }
 
--- ==================================================
--- REGISTER WITH CHARACTER SYSTEM
--- ==================================================
-if _G.YOKUDO_CharacterSystem then
-    _G.YOKUDO_CharacterSystem:RegisterFeature({
-        Name = "VIPTP",
-        Enable = Enable,
-        Disable = Disable,
-        IsEnabled = function() return Running end,
-        OnCharacterAdded = function(Char, Hum, Root)
-            if Running then
-                task.wait(1)
-                pcall(function()
-                    local TargetId = TARGET_UID
-                    Disable()
-                    task.wait(0.5)
-                    if TargetId then
-                        SetTargetId(TargetId)
-                    end
-                    Enable()
-                end)
-            end
-        end
-    })
-end
+-- ✅ ដក Register ចេញ — មិន Register ជាមួយ CharacterSystem
 
-print("✅ VIPTP Loaded (AFK Farm Only | Instant | Speed 1000/800 | Offset 15 | Callback)")
+print("✅ VIPTP Loaded (AFK Farm Only | Instant | Speed 1000/800 | Offset 15 | No Register | No GetHumanoid | Callback)")
