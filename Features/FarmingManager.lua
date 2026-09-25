@@ -35,7 +35,7 @@ end
 -- SETTINGS
 -- ==================================================
 local NIGHT_CHECK_INTERVAL = 0.05
-local DAY_CHECK_INTERVAL = 0.5
+local DAY_CHECK_INTERVAL = 0.10
 local SAFE_ZONE = Vector3.new(533, 70, -366)
 local SAFE_ZONE_DIST = 5
 local SAFE_WAIT_AFTER_REACH = 1
