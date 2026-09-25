@@ -4,11 +4,11 @@
 -- Method: InstantTeleport (Fixed)
 -- Fly Speed: 1000 | Return Speed: 1000
 -- Fly Offset: 5 (First Egg) / 50 (Safe Zone)
--- ✅ Register ជាមួយ CharacterSystem
 -- ✅ Auto Callback ទៅ FarmingManager ពេល AutoStop
 -- ✅ ForestStrike = Remote Drop Egg (First Egg Only)
 -- ✅ COLLECT_INTERVAL = 0.05 (លឿន)
 -- ✅ ពេល Egg បាត់ចេញពី workspace/container → Fly to Safe Zone ភ្លាម
+-- ❌ មិន Register ជាមួយ CharacterSystem
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -923,9 +923,5 @@ _G.YOKUDO_VIPTP = {
     SAFE_ZONE = SAFE_ZONE,
     COLLECT_INTERVAL = COLLECT_INTERVAL,
 }
-
--- ==================================================
--- REGISTER WITH CHARACTER SYSTEM
--- ==================================================
 
 print("✅ VIPTP Loaded (AFK Farm Only | Instant | First Offset 5 | Safe Offset 50 | ForestStrike First Only | Disappear Check)")
