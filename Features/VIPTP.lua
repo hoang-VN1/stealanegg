@@ -6,7 +6,8 @@
 -- Fly Speed: 1000 | Return Speed: 800 | Fly Offset: 15
 -- ✅ ដក GetHumanoid — ប្រើ GetChar/GetRoot/GetHum
 -- ✅ ដក Register — មិន Register ជាមួយ CharacterSystem
--- ✅ Auto Callback ទៅ FarmingManager ពេល AutoStop
+-- ✅ ដក Heartbeat — ប្រើ task.spawn + task.wait
+-- ✅ Auto Callback ទៅ FarmingManager ពេល AutoStop (មាន pcall)
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -82,7 +83,7 @@ local CurrentMode = "none"
 local FlyConnection = nil
 local BodyVelocity = nil
 local BodyGyro = nil
-local ActiveHeartbeat = nil
+local ActiveTask = nil  -- ✅ ប្រើ Task ជំនួស Heartbeat
 local LockConnection = nil
 
 local FirstEggList = {}
@@ -377,7 +378,7 @@ local function FindClosestEgg()
 end
 
 -- ==================================================
--- FLY TP
+-- ✅ FLY TP (No Heartbeat — ប្រើ task.spawn)
 -- ==================================================
 local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
     CleanupMovers()
@@ -410,33 +411,44 @@ local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
     local StartTime = tick()
     local ShotDone = false
 
-    FlyConnection = RunService.Heartbeat:Connect(function()
-        if not Running then
-            CleanupMovers()
-            return
-        end
+    -- ✅ ប្រើ task.spawn ជំនួស Heartbeat
+    ActiveTask = task.spawn(function()
+        while Running do
+            task.wait(0.01)
 
-        local Hum2 = GetHum()
-        local Root2 = GetRoot()
-        if not Hum2 or not Root2 then
-            CleanupMovers()
-            return
-        end
-        if Hum2.Health <= 0 then return end
+            local Hum2 = GetHum()
+            local Root2 = GetRoot()
+            if not Hum2 or not Root2 then
+                CleanupMovers()
+                return
+            end
+            if Hum2.Health <= 0 then return end
 
-        if not BodyVelocity or not BodyGyro then
-            CleanupMovers()
-            return
-        end
+            if not BodyVelocity or not BodyGyro then
+                CleanupMovers()
+                return
+            end
 
-        local CurrentPos = Root2.Position
-        local Direction = (FlyPos - CurrentPos)
-        local HorizDist = Vector3.new(Direction.X, 0, Direction.Z).Magnitude
-        local VertDist = math.abs(Direction.Y)
-        local TotalDist = Direction.Magnitude
+            local CurrentPos = Root2.Position
+            local Direction = (FlyPos - CurrentPos)
+            local HorizDist = Vector3.new(Direction.X, 0, Direction.Z).Magnitude
+            local VertDist = math.abs(Direction.Y)
+            local TotalDist = Direction.Magnitude
 
-        if IsSafeZone then
-            if HorizDist <= SAFE_LOCK_DISTANCE then
+            if IsSafeZone then
+                if HorizDist <= SAFE_LOCK_DISTANCE then
+                    CleanupMovers()
+                    Root2.CFrame = LockCFrame
+                    Root2.AssemblyLinearVelocity = Vector3.zero
+                    Root2.AssemblyAngularVelocity = Vector3.zero
+                    StartLock(Destination)
+                    if Callback then Callback() end
+                    return
+                end
+            end
+
+            if not IsSafeZone and UseShotTP and not ShotDone and HorizDist <= SHOT_DISTANCE then
+                ShotDone = true
                 CleanupMovers()
                 Root2.CFrame = LockCFrame
                 Root2.AssemblyLinearVelocity = Vector3.zero
@@ -445,42 +457,31 @@ local function FlyTP(Destination, Speed, UseShotTP, IsSafeZone, Callback)
                 if Callback then Callback() end
                 return
             end
-        end
 
-        if not IsSafeZone and UseShotTP and not ShotDone and HorizDist <= SHOT_DISTANCE then
-            ShotDone = true
-            CleanupMovers()
-            Root2.CFrame = LockCFrame
-            Root2.AssemblyLinearVelocity = Vector3.zero
-            Root2.AssemblyAngularVelocity = Vector3.zero
-            StartLock(Destination)
-            if Callback then Callback() end
-            return
-        end
+            if HorizDist <= ARRIVE_DISTANCE and VertDist <= 2 then
+                CleanupMovers()
+                Root2.CFrame = LockCFrame
+                Root2.AssemblyLinearVelocity = Vector3.zero
+                Root2.AssemblyAngularVelocity = Vector3.zero
+                StartLock(Destination)
+                if Callback then Callback() end
+                return
+            end
 
-        if HorizDist <= ARRIVE_DISTANCE and VertDist <= 2 then
-            CleanupMovers()
-            Root2.CFrame = LockCFrame
-            Root2.AssemblyLinearVelocity = Vector3.zero
-            Root2.AssemblyAngularVelocity = Vector3.zero
-            StartLock(Destination)
-            if Callback then Callback() end
-            return
-        end
+            if tick() - StartTime > TIMEOUT_SECONDS then
+                CleanupMovers()
+                if Callback then Callback() end
+                return
+            end
 
-        if tick() - StartTime > TIMEOUT_SECONDS then
-            CleanupMovers()
-            if Callback then Callback() end
-            return
-        end
+            if TotalDist > 1 then
+                BodyVelocity.Velocity = Direction.Unit * Speed
+            else
+                BodyVelocity.Velocity = Vector3.zero
+            end
 
-        if TotalDist > 1 then
-            BodyVelocity.Velocity = Direction.Unit * Speed
-        else
-            BodyVelocity.Velocity = Vector3.zero
+            BodyGyro.CFrame = CFrame.new(CurrentPos, CurrentPos + Vector3.new(Direction.X, 0, Direction.Z))
         end
-
-        BodyGyro.CFrame = CFrame.new(CurrentPos, CurrentPos + Vector3.new(Direction.X, 0, Direction.Z))
     end)
 end
 
@@ -590,7 +591,19 @@ local function IsTargetInWorkspace()
 end
 
 -- ==================================================
--- AUTO STOP (មាន Callback)
+-- ✅ STOP ACTIVE TASK
+-- ==================================================
+local function StopActiveTask()
+    if ActiveTask then
+        pcall(function()
+            task.cancel(ActiveTask)
+        end)
+        ActiveTask = nil
+    end
+end
+
+-- ==================================================
+-- AUTO STOP (មាន Callback + pcall)
 -- ==================================================
 local function AutoStop()
     Running = false
@@ -598,18 +611,29 @@ local function AutoStop()
 
     CleanupMovers()
     DisableRagdollBypass()
-    StopActiveHeartbeat()
+    StopActiveTask()  -- ✅ ប្រើ StopActiveTask
     RestoreStats()
 
     print("[VIPTP] Auto Stop")
 
-    -- ✅ ហៅ Callback ទៅ FarmingManager
-    if _G.YOKUDO_FarmingManager and _G.YOKUDO_FarmingManager.OnVIPTPComplete then
-        task.spawn(function()
-            task.wait(0.5)
-            _G.YOKUDO_FarmingManager.OnVIPTPComplete()
-        end)
-    end
+    -- ✅ ហៅ Callback ជាមួយ pcall
+    task.spawn(function()
+        task.wait(0.5)
+        if _G.YOKUDO_FarmingManager then
+            if type(_G.YOKUDO_FarmingManager.OnVIPTPComplete) == "function" then
+                local Success, Err = pcall(function()
+                    _G.YOKUDO_FarmingManager.OnVIPTPComplete()
+                end)
+                if not Success then
+                    warn("[VIPTP] OnVIPTPComplete Error:", Err)
+                end
+            else
+                print("[VIPTP] OnVIPTPComplete is not a function (yet)")
+            end
+        else
+            print("[VIPTP] FarmingManager not loaded yet")
+        end
+    end)
 end
 
 -- ==================================================
@@ -664,90 +688,77 @@ local function FlyToSafeZone()
 end
 
 -- ==================================================
--- HEARTBEAT
+-- ✅ START ACTIVE TASK (មិនប្រើ Heartbeat)
 -- ==================================================
-local function StartActiveHeartbeat()
-    if ActiveHeartbeat then
-        ActiveHeartbeat:Disconnect()
-        ActiveHeartbeat = nil
-    end
+local function StartActiveTask()
+    StopActiveTask()
 
-    ActiveHeartbeat = RunService.Heartbeat:Connect(function()
-        if not Running then return end
+    ActiveTask = task.spawn(function()
+        while Running do
+            task.wait(0.05)
 
-        local Hum = GetHum()
-        local Root = GetRoot()
-        if not Hum or not Root then return end
-        if Hum.Health <= 0 then return end
+            local Hum = GetHum()
+            local Root = GetRoot()
+            if not Hum or not Root then break end
+            if Hum.Health <= 0 then break end
 
-        if CurrentStep == "collect_first" and not CollectDone then
-            if IsFirstEggInWorkspace() then
-                CollectDone = true
-                FireForestStrike()
-                CurrentStep = "wait_spawn_back"
-                return
-            end
+            if CurrentStep == "collect_first" and not CollectDone then
+                if IsFirstEggInWorkspace() then
+                    CollectDone = true
+                    FireForestStrike()
+                    CurrentStep = "wait_spawn_back"
+                elseif tick() - CollectTime > COLLECT_INTERVAL then
+                    CollectTime = tick()
 
-            if tick() - CollectTime > COLLECT_INTERVAL then
-                CollectTime = tick()
-
-                if IsFirstEggInContainer() then
-                    RemoteCollectFirst()
-                    CollectAttempts = CollectAttempts + 1
-                else
-                    if IsFirstEggInWorkspace() then
-                        CollectDone = true
-                        FireForestStrike()
-                        CurrentStep = "wait_spawn_back"
-                    end
-                end
-            end
-        end
-
-        if CurrentStep == "wait_spawn_back" and not FlyTargetStarted then
-            if IsFirstEggInContainer() then
-                task.spawn(function() StartFlyToTarget() end)
-            end
-        end
-
-        if CurrentStep == "collect_target" and not TargetCollected then
-            if CurrentMode == "spawn" then
-                if workspace:FindFirstChild(TARGET_UID) then
-                    TargetCollected = true
-                    task.spawn(function() FlyToSafeZone() end)
-                    return
-                end
-            elseif CurrentMode == "workspace" then
-                if SavedTargetPosition then
-                    local WSEgg = workspace:FindFirstChild(TARGET_UID)
-                    if WSEgg then
-                        local CurrentPos = GetPosition(WSEgg)
-                        if CurrentPos then
-                            local Dist = (CurrentPos - SavedTargetPosition).Magnitude
-                            if Dist >= POSITION_THRESHOLD then
-                                TargetCollected = true
-                                task.spawn(function() FlyToSafeZone() end)
-                                return
-                            end
+                    if IsFirstEggInContainer() then
+                        RemoteCollectFirst()
+                        CollectAttempts = CollectAttempts + 1
+                    else
+                        if IsFirstEggInWorkspace() then
+                            CollectDone = true
+                            FireForestStrike()
+                            CurrentStep = "wait_spawn_back"
                         end
                     end
                 end
             end
 
-            if tick() - CollectTime > COLLECT_INTERVAL then
-                CollectTime = tick()
-                RemoteCollectTarget()
-                CollectAttempts = CollectAttempts + 1
+            if CurrentStep == "wait_spawn_back" and not FlyTargetStarted then
+                if IsFirstEggInContainer() then
+                    task.spawn(function() StartFlyToTarget() end)
+                end
+            end
+
+            if CurrentStep == "collect_target" and not TargetCollected then
+                if CurrentMode == "spawn" then
+                    if workspace:FindFirstChild(TARGET_UID) then
+                        TargetCollected = true
+                        task.spawn(function() FlyToSafeZone() end)
+                    end
+                elseif CurrentMode == "workspace" then
+                    if SavedTargetPosition then
+                        local WSEgg = workspace:FindFirstChild(TARGET_UID)
+                        if WSEgg then
+                            local CurrentPos = GetPosition(WSEgg)
+                            if CurrentPos then
+                                local Dist = (CurrentPos - SavedTargetPosition).Magnitude
+                                if Dist >= POSITION_THRESHOLD then
+                                    TargetCollected = true
+                                    task.spawn(function() FlyToSafeZone() end)
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if tick() - CollectTime > COLLECT_INTERVAL then
+                    CollectTime = tick()
+                    RemoteCollectTarget()
+                    CollectAttempts = CollectAttempts + 1
+                end
             end
         end
     end)
-end
-
-local function StopActiveHeartbeat()
-    if ActiveHeartbeat then
-        ActiveHeartbeat:Disconnect()
-        ActiveHeartbeat = nil
-    end
 end
 
 -- ==================================================
@@ -823,7 +834,7 @@ local function StartProcess()
 
     CurrentStep = "fly_first"
 
-    StartActiveHeartbeat()
+    StartActiveTask()  -- ✅ ប្រើ StartActiveTask
 
     print("[VIPTP] FlyTP to First Egg (Shot TP)")
     FlyTP(EggPos, FLY_SPEED, true, false, function()
@@ -853,7 +864,7 @@ local function FullReset()
 
     CleanupMovers()
     DisableRagdollBypass()
-    StopActiveHeartbeat()
+    StopActiveTask()  -- ✅ ប្រើ StopActiveTask
     RestoreStats()
 
     print("[VIPTP] Full Reset")
@@ -901,4 +912,4 @@ _G.YOKUDO_VIPTP = {
 
 -- ✅ ដក Register ចេញ — មិន Register ជាមួយ CharacterSystem
 
-print("✅ VIPTP Loaded (AFK Farm Only | Instant | Speed 1000/800 | Offset 15 | No Register | No GetHumanoid | Callback)")
+print("✅ VIPTP Loaded (AFK Farm Only | Instant | Speed 1000/800 | Offset 15 | No Register | No GetHumanoid | No Heartbeat)")
