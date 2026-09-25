@@ -441,7 +441,7 @@ end
 -- ==================================================
 -- ✅ CALLBACK ពី VIPTP (ពេល AutoStop)
 -- ==================================================
-function _G.YOKUDO_FarmingManager_OnVIPTPComplete()
+local function OnVIPTPComplete()
     if not FarmingEnabled then return end
     if not WaitingForVIPTP then return end
 
@@ -684,9 +684,29 @@ _G.YOKUDO_FarmingManager = {
     FLY_OFFSET = FLY_OFFSET,
     METHOD = METHOD,
     -- ✅ Callback សម្រាប់ VIPTP
-    OnVIPTPComplete = _G.YOKUDO_FarmingManager_OnVIPTPComplete,
+    OnVIPTPComplete = OnVIPTPComplete,
 }
 
+-- ==================================================
+-- REGISTER WITH CHARACTER SYSTEM
+-- ==================================================
+if _G.YOKUDO_CharacterSystem then
+    _G.YOKUDO_CharacterSystem:RegisterFeature({
+        Name = "FarmingManager",
+        Enable = Enable,
+        Disable = Disable,
+        IsEnabled = function() return FarmingEnabled end,
+        OnCharacterAdded = function(Char, Hum, Root)
+            if FarmingEnabled then
+                task.wait(1)
+                if FarmingThread then
+                    pcall(function() task.cancel(FarmingThread) end)
+                end
+                FarmingThread = task.spawn(function() MainLoop() end)
+            end
+        end
+    })
+end
 
 -- ==================================================
 -- BUILD MESHID MAP ON LOAD
