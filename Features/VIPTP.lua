@@ -3,12 +3,10 @@
 -- ដាច់ដោយឡែកសម្រាប់ AFK Farm
 -- Method: InstantTeleport (Fixed)
 -- Fly Speed: 1000 | Return Speed: 1000
--- Fly Offset: 5 (First Egg) / 50 (Safe Zone)
+-- Fly Offset First: 5 | Fly Offset Safe: 50
 -- ✅ Auto Callback ទៅ FarmingManager ពេល AutoStop
 -- ✅ ForestStrike = Remote Drop Egg (First Egg Only)
--- ✅ COLLECT_INTERVAL = 0.05 (លឿន)
--- ✅ ពេល Egg បាត់ចេញពី workspace/container → Fly to Safe Zone ភ្លាម
--- ❌ មិន Register ជាមួយ CharacterSystem
+-- ❌ ដក Register ចេញ (ការពារជាន់គ្នា)
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -51,14 +49,15 @@ local FLY_OFFSET_FIRST = 5
 local FLY_OFFSET_SAFE = 50
 local CurrentMethod = "InstantTeleport"
 
-local SHOT_DISTANCE = 15
+-- ✅ កើនឡើងដើម្បីលឿន
+local SHOT_DISTANCE = 30       -- ពី 15 → 30
 local LOCK_ABOVE = 1
 
-local ARRIVE_DISTANCE = 2
-local SAFE_LOCK_DISTANCE = 3
-local TIMEOUT_SECONDS = 30
+local ARRIVE_DISTANCE = 5     -- ពី 2 → 5
+local SAFE_LOCK_DISTANCE = 5  -- ពី 3 → 5
+local TIMEOUT_SECONDS = 15    -- ពី 30 → 15
 
-local COLLECT_INTERVAL = 0.05
+local COLLECT_INTERVAL = 0.2
 local SEARCH_PREFIX = "FirstAreaEgg"
 local POSITION_THRESHOLD = 1
 
@@ -371,7 +370,7 @@ local function FindClosestEgg()
 end
 
 -- ==================================================
--- FLY TP
+-- FLY TP (Offset Parameter)
 -- ==================================================
 local function FlyTP(Destination, Speed, Offset, UseShotTP, IsSafeZone, Callback)
     CleanupMovers()
@@ -498,7 +497,7 @@ local function InstantFlyTP(Destination, Callback)
 end
 
 -- ==================================================
--- TELEPORT TO TARGET
+-- TELEPORT TO TARGET (Instant Only)
 -- ==================================================
 local function TeleportToTarget(TargetPos, Callback)
     print("[VIPTP] Instant TP to Target")
@@ -506,7 +505,7 @@ local function TeleportToTarget(TargetPos, Callback)
 end
 
 -- ==================================================
--- REMOTE COLLECT
+-- REMOTE COLLECT (ដូច Logic ដើម)
 -- ==================================================
 local function RemoteCollectFirst()
     if not CollectEvent or not FirstEggSlotKey or not FirstEggUid then return false end
@@ -530,7 +529,7 @@ local function RemoteCollectTarget()
 end
 
 -- ==================================================
--- FIRE FOREST STRIKE (First Egg Only)
+-- FIRE FOREST STRIKE (Remote Drop Egg - First Egg Only)
 -- ==================================================
 local function FireForestStrike()
     if ForestStrikeFired then return end
@@ -581,7 +580,7 @@ local function IsTargetInWorkspace()
 end
 
 -- ==================================================
--- AUTO STOP
+-- AUTO STOP (Callback ទៅ FarmingManager)
 -- ==================================================
 local function AutoStop()
     Running = false
@@ -594,9 +593,10 @@ local function AutoStop()
 
     print("[VIPTP] Auto Stop")
 
+    -- ✅ ហៅ Callback ទៅ FarmingManager
     if _G.YOKUDO_FarmingManager and _G.YOKUDO_FarmingManager.OnVIPTPComplete then
         task.spawn(function()
-            task.wait(0.5)
+            task.wait(0.2)  -- ពី 0.5 → 0.2
             _G.YOKUDO_FarmingManager.OnVIPTPComplete()
         end)
     end
@@ -641,7 +641,7 @@ local function StartFlyToTarget()
 end
 
 -- ==================================================
--- FLY UP + SAFE ZONE
+-- FLY UP + FLY TO SAFE ZONE (Offset 50)
 -- ==================================================
 local function FlyUpAndToSafeZone()
     CurrentStep = "fly_up"
@@ -682,9 +682,7 @@ function StartActiveHeartbeat()
         if not Hum or not Root then return end
         if Hum.Health <= 0 then return end
 
-        -- ==========================================
         -- Step: Collect First Egg
-        -- ==========================================
         if CurrentStep == "collect_first" and not CollectDone then
             if IsFirstEggInWorkspace() then
                 CollectDone = true
@@ -709,9 +707,7 @@ function StartActiveHeartbeat()
             end
         end
 
-        -- ==========================================
         -- Step: Wait First Egg Back to Spawn
-        -- ==========================================
         if CurrentStep == "wait_spawn_back" and not FlyTargetStarted then
             if IsFirstEggInContainer() then
                 print("[VIPTP] First Egg Back to Spawn → Stop Remote First")
@@ -720,18 +716,8 @@ function StartActiveHeartbeat()
             end
         end
 
-        -- ==========================================
         -- Step: Collect Target Egg
-        -- ==========================================
         if CurrentStep == "collect_target" and not TargetCollected then
-            -- ✅ ពិនិត្យ Egg បាត់ចេញពី workspace និង Container
-            if not IsTargetInWorkspace() and not IsTargetInContainer() then
-                print("[VIPTP] Target Egg Disappeared → Fly to Safe Zone")
-                TargetCollected = true
-                task.spawn(function() FlyUpAndToSafeZone() end)
-                return
-            end
-
             if CurrentMode == "spawn" then
                 if workspace:FindFirstChild(TARGET_UID) then
                     TargetCollected = true
@@ -791,6 +777,7 @@ local function StartProcess()
     SaveStats()
     EnableRagdollBypass()
 
+    -- Auto Detect Option (spawn or workspace)
     if IsTargetInContainer() then
         CurrentMode = "spawn"
         print("[VIPTP] Target found in Container → spawn mode")
@@ -921,7 +908,16 @@ _G.YOKUDO_VIPTP = {
     FLY_OFFSET_FIRST = FLY_OFFSET_FIRST,
     FLY_OFFSET_SAFE = FLY_OFFSET_SAFE,
     SAFE_ZONE = SAFE_ZONE,
-    COLLECT_INTERVAL = COLLECT_INTERVAL,
 }
 
-print("✅ VIPTP Loaded (AFK Farm Only | Instant | First Offset 5 | Safe Offset 50 | ForestStrike First Only | Disappear Check)")
+-- ==================================================
+-- ❌ ដក Register ចេញ (ការពារជាន់គ្នា)
+-- ==================================================
+-- if _G.YOKUDO_CharacterSystem then
+--     _G.YOKUDO_CharacterSystem:RegisterFeature({
+--         Name = "VIPTP",
+--         ...
+--     })
+-- end
+
+print("✅ VIPTP Loaded (AFK Farm Only | Instant | No Register | Faster)")
