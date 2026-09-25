@@ -50,7 +50,7 @@ local SAFE_ZONE = Vector3.new(533, 70, -366)
 
 local FLY_SPEED = 1000          -- Fixed
 local RETURN_SPEED = 1000       -- Fixed
-local FLY_OFFSET = 10           -- ✅ Offset 10
+local FLY_OFFSET = 5           -- ✅ Offset 10
 local CurrentMethod = "InstantTeleport"  -- Fixed
 
 local SHOT_DISTANCE = 15        -- ✅ Shot Distance 15
