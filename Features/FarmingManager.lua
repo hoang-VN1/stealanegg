@@ -6,6 +6,7 @@
 -- ✅ ហៅ VIPTP ពេលឃើញ Egg
 -- ✅ ពិនិត្យ Egg ភ្លាមៗពេល Enable()
 -- ✅ Callback ពី VIPTP ពេល AutoStop
+-- ✅ ដោះស្រាយ Error: StartVIPTP នៅខាងលើ CheckEggAndAct
 -- ==================================================
 
 local Players = game:GetService("Players")
@@ -378,6 +379,23 @@ local function FlyToSafeZoneAndWait()
 end
 
 -- ==================================================
+-- ✅ START VIPTP (ផ្លាស់ទៅខាងលើដើម្បីកុំឲ្យ Error)
+-- ==================================================
+local function StartVIPTP(EggUid)
+    if not _G.YOKUDO_VIPTP then
+        warn("[FarmingManager] VIPTP not loaded!")
+        return
+    end
+
+    print("[FarmingManager] Starting VIPTP:")
+    print("  - Target UID: " .. tostring(EggUid))
+
+    WaitingForVIPTP = true
+    _G.YOKUDO_VIPTP.SetTargetId(EggUid)
+    _G.YOKUDO_VIPTP.Enable()
+end
+
+-- ==================================================
 -- ✅ CHECK EGG AND ACT (ពិនិត្យ Egg ភ្លាមៗ)
 -- ==================================================
 local function CheckEggAndAct()
@@ -417,23 +435,6 @@ local function CheckEggAndAct()
             end
         end
     end
-end
-
--- ==================================================
--- START VIPTP
--- ==================================================
-local function StartVIPTP(EggUid)
-    if not _G.YOKUDO_VIPTP then
-        warn("[FarmingManager] VIPTP not loaded!")
-        return
-    end
-
-    print("[FarmingManager] Starting VIPTP:")
-    print("  - Target UID: " .. tostring(EggUid))
-
-    WaitingForVIPTP = true
-    _G.YOKUDO_VIPTP.SetTargetId(EggUid)
-    _G.YOKUDO_VIPTP.Enable()
 end
 
 -- ==================================================
@@ -529,6 +530,27 @@ _G.YOKUDO_FarmingManager = {
     FLY_OFFSET = FLY_OFFSET,
     OnVIPTPComplete = OnVIPTPComplete,
 }
+
+-- ==================================================
+-- REGISTER WITH CHARACTER SYSTEM
+-- ==================================================
+if _G.YOKUDO_CharacterSystem then
+    _G.YOKUDO_CharacterSystem:RegisterFeature({
+        Name = "FarmingManager",
+        Enable = Enable,
+        Disable = Disable,
+        IsEnabled = function() return FarmingEnabled end,
+        OnCharacterAdded = function(Char, Hum, Root)
+            if FarmingEnabled then
+                task.wait(1)
+                if FarmingThread then
+                    pcall(function() task.cancel(FarmingThread) end)
+                end
+                FarmingThread = task.spawn(function() MainLoop() end)
+            end
+        end
+    })
+end
 
 -- ==================================================
 -- BUILD MESHID MAP ON LOAD
