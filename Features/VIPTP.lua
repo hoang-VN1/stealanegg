@@ -18,7 +18,7 @@ local Container = workspace:WaitForChild("AreaEggSlotsClient")
 -- ==================================================
 local Config = {
     FlySpeed = 1000,
-    ReturnSpeed = 800,
+    ReturnSpeed = 1000,
 
     FlyOffset = 5,
     ShotDistance = 25,
